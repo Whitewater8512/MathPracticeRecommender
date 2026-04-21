@@ -1,0 +1,7 @@
+tutor.db
+
+chroma_db/
+
+__pycache__/
+*.log
+.env
