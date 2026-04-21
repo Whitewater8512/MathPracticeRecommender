@@ -1,6 +1,6 @@
 import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
+os.environ["CHROMA_TELEMETRY"] = "False"
 os.environ["TORCH_DEVICE"] = "cuda"
 os.environ["WORKERS"] = "1"
 os.environ["MARKER_VRAM_PER_GPU"] = "6"
