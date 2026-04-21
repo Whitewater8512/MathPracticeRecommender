@@ -3,6 +3,8 @@ openai
 pandas
 numpy
 python-dotenv
-chromadb
-protobuf==3.20.3
+chromadb==0.4.24
+protobuf==4.25.3
 marker-pdf
+opentelemetry-sdk==1.22.0
+opentelemetry-api==1.22.0
