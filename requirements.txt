@@ -3,5 +3,5 @@ openai
 pandas
 numpy
 python-dotenv
-chromadb>=0.5.0
+chromadb
 marker-pdf
