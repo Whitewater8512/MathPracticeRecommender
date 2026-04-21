@@ -4,3 +4,5 @@ pandas
 numpy
 python-dotenv
 chromadb
+protobuf==3.20.3
+marker-pdf
