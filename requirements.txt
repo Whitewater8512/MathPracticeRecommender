@@ -3,3 +3,4 @@ openai
 chromadb
 marker-pdf
 protobuf==3.20.3
+sentence-transformers>=2.2.0
