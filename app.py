@@ -6,7 +6,10 @@ import llm_api as llm_api
 import rag as rag
 import rec_model
 import json
+<<<<<<< HEAD
 from streamlit_agraph import agraph, Node, Edge, Config
+=======
+>>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
 
 # 初始化数据库
 db.init_db()

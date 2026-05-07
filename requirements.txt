@@ -1,7 +1,14 @@
 streamlit
+<<<<<<< HEAD
 streamlit-agraph
+=======
+>>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
 openai
 chromadb
 marker-pdf
 protobuf==3.20.3
+<<<<<<< HEAD
 sentence-transformers>=2.2.0
+=======
+sentence-transformers>=2.2.0
+>>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
