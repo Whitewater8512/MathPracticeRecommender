@@ -1,15 +1,10 @@
 import os
 import json
 import re
-<<<<<<< HEAD
 import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
-=======
-from openai import OpenAI
-from dotenv import load_dotenv
->>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
 
 # 加载环境变量
 load_dotenv()
@@ -151,7 +146,6 @@ def generate_math_question(knowledge_point: str, difficulty: int = 2, question_t
         print(f"调用 Qwen API 出错: {e}")
         return None
 
-<<<<<<< HEAD
 # def auto_tag_question(question_content: str) -> str:
 #     # 保持原有逻辑不变
 #     system_prompt = """你是一个考研数学（高等数学）专家。
@@ -194,27 +188,3 @@ def auto_tag_question_with_kge(question_content: str, text_encoder, kge_embeddin
             best_kp = kp_name
             
     return best_kp
-=======
-def auto_tag_question(question_content: str) -> str:
-    # 保持原有逻辑不变
-    system_prompt = """你是一个考研数学（高等数学）专家。
-请根据用户提供的题目内容，将其归入最精确的细分知识点标签中。
-常见的标签包括：
-【函数极限，数列极限，连续、间断与导数，中值定理，导数应用，导数证明，积分，积分应用，重积分，多元微分概念，多元微分计算，微分方程，曲线积分，曲面积分，级数判敛，幂级数】
-如果题目涉及多个知识点，请输出最核心的【一个】。
-**严格要求**：只输出标签名称，不要带任何标点符号、前缀或解释，例如："函数极限"、"数列极限"、"连续、间断与导数"等。
-"""
-    try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"请为这道题打标：\n{question_content}"}
-            ]
-        )
-        tag = completion.choices[0].message.content.strip()
-        return tag
-    except Exception as e:
-        print(f"打标失败: {e}")
-        return "未分类"
->>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
