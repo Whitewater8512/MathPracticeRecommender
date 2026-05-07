@@ -4,12 +4,9 @@ import streamlit as st
 import database as db
 import llm_api as llm_api
 import rag as rag
-import rec_model
+import rec_model_
 import json
-<<<<<<< HEAD
 from streamlit_agraph import agraph, Node, Edge, Config
-=======
->>>>>>> 9bcd7f6018711db1bd0eac832d194403a2d6f7df
 
 # 初始化数据库
 db.init_db()
@@ -47,11 +44,36 @@ def go_to_main():
     st.session_state.current_q = None 
     st.session_state.answer_submitted = False
 
+def render_recommendation_path(user_weakness, recommended_kp):
+    st.subheader("🧠 AI 推荐决策图谱")
+    
+    nodes = []
+    edges = []
+    
+    # 构建节点
+    nodes.append(Node(id="User", label="当前用户", size=25, color="#FF6B6B"))
+    nodes.append(Node(id=user_weakness, label=f"弱项:{user_weakness}", size=25, color="#4ECDC4"))
+    nodes.append(Node(id=recommended_kp, label=f"推荐:{recommended_kp}", size=30, color="#FFE66D"))
+    
+    # 构建解释路径 (边)
+    edges.append(Edge(source="User", target=user_weakness, label="知识追踪(BKT)诊断为未掌握"))
+    edges.append(Edge(source=user_weakness, target=recommended_kp, label="Graph-RAG发现关联依赖"))
+    
+    # 配置图表
+    config = Config(width=700, 
+                    height=300, 
+                    directed=True,
+                    physics=True, 
+                    hierarchical=False)
+    
+    # 渲染
+    agraph(nodes=nodes, edges=edges, config=config)
+
 def load_new_question(force_ai=False):
     """使用推荐引擎加载题目，支持强制 AI 模式"""
     if st.session_state.current_kp:
         # 统一调用 rec_model
-        source, q = rec_model.recommend_next_step(
+        source, q = rec_model_.recommend_next_step(
             st.session_state.user_id, 
             st.session_state.current_kp, 
             force_ai=force_ai
@@ -185,7 +207,13 @@ else:
         if st.session_state.current_q is not None:
             q = st.session_state.current_q
             q_type = q['question_type']
-            
+
+            with st.expander("💡 为什么推荐这道题？点击查看 AI 推荐图谱"):
+                weaks = db.get_user_weak_points(st.session_state.user_id)
+                user_weakness = weaks[0] if weaks else "基础知识"
+                
+                render_recommendation_path(user_weakness, st.session_state.current_kp)
+
             # 题干展示
             st.subheader("📄 题目")
             st.markdown(f"### {q['content']}")
@@ -285,34 +313,34 @@ else:
             st.warning("该知识点暂无可用题目，请先在题库中添加题目~")
 
 if st.session_state.page == "db_manager":
-        st.header("📁 底层数据预览与统计")
-        st.markdown("---")
-        
-        st.subheader("📚 RAG 向量知识库状态")
-        rag_stats = rag.get_knowledge_base_stats()
-        
-        col1, col2 = st.columns(2)
-        col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
-        col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
-        
-        if rag_stats['files']:
-            with st.expander("查看已入库的 PDF 文件列表"):
-                for file_name in rag_stats['files']:
-                    st.write(f"- {file_name}")
-                    
-        st.markdown("---")
+    st.header("📁 底层数据预览与统计")
+    st.markdown("---")
+    
+    st.subheader("📚 RAG 向量知识库状态")
+    rag_stats = rag.get_knowledge_base_stats()
+    
+    col1, col2 = st.columns(2)
+    col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
+    col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
+    
+    if rag_stats['files']:
+        with st.expander("查看已入库的 PDF 文件列表"):
+            for file_name in rag_stats['files']:
+                st.write(f"- {file_name}")
+                
+    st.markdown("---")
 
-        st.subheader("📝 结构化题库数据 (SQLite)")
-        all_qs = db.get_all_questions()
-        if all_qs:
-            # 顺便在这里加上结构化题库的总量统计
-            st.write(f"当前共有 **{len(all_qs)}** 道题目。")
-            df = pd.DataFrame(all_qs)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("结构化数据库目前是空的。")
-            
-        st.divider()
-        if st.button("🔙 返回首页", type="primary"):
-            st.session_state.page = "main"
-            st.rerun()
+    st.subheader("📝 结构化题库数据 (SQLite)")
+    all_qs = db.get_all_questions()
+    if all_qs:
+        # 顺便在这里加上结构化题库的总量统计
+        st.write(f"当前共有 **{len(all_qs)}** 道题目。")
+        df = pd.DataFrame(all_qs)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("结构化数据库目前是空的。")
+        
+    st.divider()
+    if st.button("🔙 返回首页", type="primary"):
+        st.session_state.page = "main"
+        st.rerun()

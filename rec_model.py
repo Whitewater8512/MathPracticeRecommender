@@ -8,17 +8,71 @@ import llm_api
 import random
 import pandas as pd
 from datetime import datetime
+import numpy as np
+
+try:
+    USER_EMB = np.load('checkpoints/mkr_user_emb.npy')
+    ITEM_EMB = np.load('checkpoints/mkr_item_emb.npy')
+    # 理想情况下，你还需要加载映射字典： db_id -> matrix_index
+    # user_id2idx = json.load(open('checkpoints/user_map.json'))
+    # item_id2idx = json.load(open('checkpoints/item_map.json'))
+    MKR_LOADED = True
+    print("✅ 成功加载 MKR Embedding 权重！")
+except Exception as e:
+    USER_EMB, ITEM_EMB = None, None
+    MKR_LOADED = False
+    print(f"⚠️ MKR 权重未加载，将使用默认推荐策略。原因: {e}")
 
 def recommend_next_step(user_id, current_kp, force_ai=False):
     """
-    决策中心：增加 force_ai 参数，并实现 AI 题目持久化
+    决策中心：融合了 MKR 深度学习模型 和 LLM 生成机制
     """
-    # 1. 只有在不强制 AI 且 随机概率未命中时，才尝试从本地找题
     local_q = None
-    if not force_ai and random.random() > 0.2:
-        local_q = db.get_recommended_question(user_id, current_kp)
+    
+    # 1. 如果不强制使用 AI，我们优先从本地题库找题
+    if not force_ai:
+        # 获取该知识点下，用户还没做对过的所有候选题目
+        conn = db.sqlite3.connect(db.DB_FILE)
+        df_candidates = pd.read_sql_query("""
+            SELECT * FROM questions 
+            WHERE knowledge_point = ? 
+            AND q_id NOT IN (SELECT q_id FROM records WHERE user_id = ? AND is_correct = 1)
+        """, conn, params=(current_kp, user_id))
+        conn.close()
 
-    # 2. 如果本地没题，或命中 AI 逻辑，或强制 AI
+        if not df_candidates.empty:
+            # === 👇 核心融合：MKR 模型打分逻辑 👇 ===
+            if MKR_LOADED:
+                best_score = -float('inf')
+                best_row_index = 0
+                
+                # 获取用户的 Embedding 向量
+                # 注意：这里假设 user_id 直接对应矩阵索引，实际需转换 u_idx = user_id2idx[str(user_id)]
+                u_idx = user_id % USER_EMB.shape[0] 
+                u_vector = USER_EMB[u_idx]
+
+                # 遍历所有候选题目，计算推荐得分
+                for idx, row in df_candidates.iterrows():
+                    q_id = row['q_id']
+                    # 注意：同样需要索引映射 i_idx = item_id2idx[str(q_id)]
+                    i_idx = q_id % ITEM_EMB.shape[0]
+                    i_vector = ITEM_EMB[i_idx]
+                    
+                    # 核心：内积打分 (Score = User Embedding · Item Embedding)
+                    score = np.dot(u_vector, i_vector)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_row_index = idx
+                
+                # 选出 MKR 得分最高的题目
+                local_q = df_candidates.iloc[best_row_index].to_dict()
+            # === 👆 MKR 逻辑结束 👆 ===
+            else:
+                # 降级方案：如果 MKR 没跑通，走原来的随机或者基于 BKT 难度的策略
+                local_q = db.get_recommended_question(user_id, current_kp)
+
+    # 2. 如果本地实在没题了，或者用户强行点了 "✨ AI 生成新题"，触发 RAG + LLM 逻辑
     if local_q is None or force_ai:
         context = rag.retrieve_relevant_context(current_kp)
 
@@ -48,7 +102,6 @@ def recommend_next_step(user_id, current_kp, force_ai=False):
                 options=new_q['options'],
                 answer=new_q['answer']
             )
-    
             ai_q = {
                 "q_id": new_id, 
                 "content": new_q['content'],
