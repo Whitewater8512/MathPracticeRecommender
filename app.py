@@ -4,7 +4,7 @@ import streamlit as st
 import database as db
 import llm_api as llm_api
 import rag as rag
-import rec_model_
+import rec_model
 import json
 from streamlit_agraph import agraph, Node, Edge, Config
 
