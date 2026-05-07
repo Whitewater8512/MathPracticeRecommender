@@ -73,7 +73,7 @@ def load_new_question(force_ai=False):
     """使用推荐引擎加载题目，支持强制 AI 模式"""
     if st.session_state.current_kp:
         # 统一调用 rec_model
-        source, q = rec_model_.recommend_next_step(
+        source, q = rec_model.recommend_next_step(
             st.session_state.user_id, 
             st.session_state.current_kp, 
             force_ai=force_ai
