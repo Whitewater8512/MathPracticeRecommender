@@ -53,10 +53,10 @@ def go_to_main():
 
 def render_recommendation_path(user_weakness, recommended_kp):
     st.subheader("🧠 AI 推荐决策图谱")
-    
+
     nodes = []
     edges = []
-    
+
     # 构建节点
     nodes.append(Node(id="User", label="当前用户", size=25, color="#FF6B6B"))
 
@@ -68,14 +68,14 @@ def render_recommendation_path(user_weakness, recommended_kp):
         nodes.append(Node(id=recommended_kp, label=f"推荐:{recommended_kp}", size=30, color="#FFE66D"))
         edges.append(Edge(source="User", target=user_weakness, label="知识追踪(BKT)诊断为未掌握"))
         edges.append(Edge(source=user_weakness, target=recommended_kp, label="Graph-RAG发现关联依赖"))
-    
+
     # 配置图表
     config = Config(width=700, 
                     height=300, 
                     directed=True,
                     physics=True, 
                     hierarchical=False)
-    
+
     # 渲染
     agraph(nodes=nodes, edges=edges, config=config)
 
@@ -323,66 +323,69 @@ else:
                         st.rerun()
             
             # --- 结果展示与下一题控制区 ---
-            if is_disabled:
-                current_correct_answer = q['answer']
-
-                # 渲染结果反馈
-                if st.session_state.is_correct:
-                    st.success("🎉 回答正确！太棒了，继续加油~")
-                else:
-                    st.error("❌ 答案错误")
-                    if q_type == "choice":
-                        st.info(f"正确答案：{current_correct_answer}. {json.loads(q['options'])[current_correct_answer]}")
-                    else:
-                        st.info(f"正确答案：{current_correct_answer}")
-
-                st.divider()
-                
-                # 此时才渲染下一题按钮，实现完美隔离
-                col1 = st.empty()
-                with col1:
-                    if st.button("下一题 (AI生成) ➡️", type="primary"):
-                        loading_placeholder = st.empty() 
-                        tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
+            col1 = st.empty()
+            with col1:
+                if st.button("下一题 (AI生成) ➡️", type="primary"):
+                    loading_placeholder = st.empty() 
+                    tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
+                    
+                    # 1. 准备一个普通的字典容器，用来接收子线程的数据
+                    thread_result = {}
+                    
+                    def generate_task():
+                        # 2. 耗时的模型推荐逻辑放在子线程，但【绝对不要】在这里修改 st.session_state
+                        src, new_q = rec_model.recommend_next_step(
+                            st.session_state.user_id, 
+                            st.session_state.current_kp, 
+                            force_ai=True
+                        )
+                        thread_result['source'] = src
+                        thread_result['q'] = new_q
                         
-                        def generate_task():
-                            load_new_question(force_ai=True)
-                            
-                        thread = threading.Thread(target=generate_task)
-                        add_script_run_ctx(thread) 
-                        thread.start()
-
-                        tip_idx = 0
-                        while thread.is_alive():
-                            loading_placeholder.info(tips[tip_idx % len(tips)])
-                            time.sleep(random.uniform(1, 3))
-                            tip_idx += 1
-
-                        thread.join()
-                        loading_placeholder.empty() 
-
-                        if st.session_state.current_q:
-                            st.session_state.show_toast = True
-                            st.rerun()
-                        else:
-                            st.error("生成失败，请检查配置")
+                    thread = threading.Thread(target=generate_task)
+                    add_script_run_ctx(thread) 
+                    thread.start()
+                    
+                    tip_idx = 0
+                    while thread.is_alive():
+                        loading_placeholder.info(tips[tip_idx % len(tips)])
+                        time.sleep(random.uniform(1, 3)) 
+                        tip_idx += 1
+                        
+                    thread.join() 
+                    loading_placeholder.empty() 
+                    
+                    # 3. 线程结束，回到主线程！在这里安全地更新全局状态
+                    if thread_result.get('q'):
+                        st.session_state.current_q = thread_result['q']
+                        st.session_state.q_source = thread_result['source']
+                        
+                        # 彻底清空上一题的状态锁
+                        st.session_state.answer_submitted = False
+                        st.session_state.answered_q_id = None
+                        st.session_state.is_correct = None
+                        
+                        st.session_state.show_toast = True
+                        st.rerun()
+                    else:
+                        st.error("生成失败，请检查 API 或网络配置")
 
 if st.session_state.page == "db_manager":
     st.header("📁 底层数据预览与统计")
     st.markdown("---")
-    
+
     st.subheader("📚 RAG 向量知识库状态")
     rag_stats = rag.get_knowledge_base_stats()
-    
+
     col1, col2 = st.columns(2)
     col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
     col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
-    
+
     if rag_stats['files']:
         with st.expander("查看已入库的 PDF 文件列表"):
             for file_name in rag_stats['files']:
                 st.write(f"- {file_name}")
-                
+
     st.markdown("---")
 
     st.subheader("📝 结构化题库数据 (SQLite)")
@@ -394,7 +397,7 @@ if st.session_state.page == "db_manager":
         st.dataframe(df, use_container_width=True)
     else:
         st.info("结构化数据库目前是空的。")
-        
+
     st.divider()
     if st.button("🔙 返回首页", type="primary"):
         st.session_state.page = "main"
