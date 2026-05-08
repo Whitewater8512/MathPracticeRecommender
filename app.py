@@ -134,50 +134,53 @@ else:
         st.markdown(f"### 👤 用户ID：{st.session_state.user_id}")
         st.divider()
         
-        # 知识点选择器
+        # 获取所有知识点
         kps = db.get_all_knowledge_points()
         if not kps:
             st.warning("题库暂无知识点，请先初始化数据库")
         else:
-            default_index = 0
-            if st.session_state.current_kp and st.session_state.current_kp in kps:
-                default_index = kps.index(st.session_state.current_kp)
-            selected_kp = st.selectbox("📚 选择练习知识点", kps, index=default_index)
+            # 如果尚未选中当前知识点，则默认初始化为第一个
+            if st.session_state.current_kp not in kps:
+                st.session_state.current_kp = kps[0]
             
-            # 切换知识点时重置题目
-            if selected_kp != st.session_state.current_kp:
-                st.session_state.current_kp = selected_kp
-                load_new_question()
-        
-        st.divider()
-        st.subheader("📈 考研数学熟练度看板")
-        if kps:
-            with st.expander("点击展开各章节详细熟练度", expanded=False):
+            st.subheader("📈 考研数学熟练度看板")
+            st.caption("💡 点击对应章节名称即可跳转至该知识点练习")
+            
+            with st.expander("点击展开各章节详细熟练度", expanded=True):
                 for kp in kps:
                     # 计算该知识点的熟练度
                     _, _, rec_coef = db.calculate_proficiency(st.session_state.user_id, kp)
                     prof = min(max(int(rec_coef), 0), 100) # 限制在 0-100 之间
                     
-                    # 动态决定颜色：低于40红色，40-70黄色，70以上绿色
+                    # 动态决定颜色
                     if prof < 40:
                         bar_color = "#FF4B4B" # 红色 (警告)
                     elif prof < 70:
                         bar_color = "#FFAA00" # 黄色 (提升中)
                     else:
                         bar_color = "#00CC96" # 绿色 (已掌握)
-                        
-                    # 使用 HTML 渲染带颜色的自定义进度条
-                    st.markdown(f"""
-                    <div style="margin-bottom: 12px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 14px;">
-                            <span style="font-weight: 500;">{kp}</span>
-                            <span style="color: {bar_color}; font-weight: bold;">{prof}%</span>
+                    
+                    # 使用 st.columns 实现左侧按钮跳转，右侧进度条展示
+                    col_btn, col_bar = st.columns([5, 5], vertical_alignment="center")
+                    
+                    with col_btn:
+                        # 当前正在练习的章节增加提示符
+                        prefix = "👉 " if kp == st.session_state.current_kp else ""
+                        if st.button(f"{prefix}{kp}", key=f"nav_{kp}", use_container_width=True):
+                            st.session_state.current_kp = kp
+                            load_new_question()
+                            st.rerun()
+                            
+                    with col_bar:
+                        # 渲染带颜色的自定义进度条
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; width: 100%;">
+                            <div style="width: 100%; background-color: #444444; border-radius: 5px; height: 10px; margin-right: 8px;">
+                                <div style="width: {prof}%; background-color: {bar_color}; height: 10px; border-radius: 5px; transition: width 0.5s;"></div>
+                            </div>
+                            <span style="color: {bar_color}; font-weight: bold; font-size: 13px;">{prof}%</span>
                         </div>
-                        <div style="width: 100%; background-color: #444444; border-radius: 5px; height: 8px;">
-                            <div style="width: {prof}%; background-color: {bar_color}; height: 8px; border-radius: 5px; transition: width 0.5s;"></div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
 
         st.divider()
         if st.button("📊 查看知识点答题报告", use_container_width=True):
@@ -237,7 +240,7 @@ else:
             st.rerun()
 
     # B. 核心刷题页面
-    else:
+    elif st.session_state.page == "main":
         st.header(f"✏️ 知识点练习：{st.session_state.current_kp}")
         st.markdown("---")
 
@@ -275,7 +278,7 @@ else:
                     user_selected = st.radio(
                         "请选择正确选项",
                         options=option_list,
-                        disabled=is_disabled, # 使用新的硬锁
+                        disabled=is_disabled, # 使用硬锁
                         label_visibility="collapsed"
                     )
                     if user_selected:
@@ -290,9 +293,18 @@ else:
                         label_visibility="collapsed"
                     )
                 
+                # 动态生成提交按钮的文案与反馈
+                if is_disabled:
+                    if st.session_state.is_correct:
+                        submit_label = "✅ 恭喜你，回答正确！"
+                    else:
+                        submit_label = f"❌ 回答错误，正确答案是：{q['answer']}"
+                else:
+                    submit_label = "提交答案"
+
                 submitted = st.form_submit_button(
-                    "提交答案", 
-                    type="primary", 
+                    submit_label, 
+                    type="secondary" if is_disabled else "primary", 
                     use_container_width=True,
                     disabled=is_disabled
                 )
@@ -333,7 +345,7 @@ else:
                     thread_result = {}
                     
                     def generate_task():
-                        # 2. 耗时的模型推荐逻辑放在子线程，但【绝对不要】在这里修改 st.session_state
+                        # 2. 耗时的模型推荐逻辑放在子线程
                         src, new_q = rec_model.recommend_next_step(
                             st.session_state.user_id, 
                             st.session_state.current_kp, 
@@ -370,38 +382,38 @@ else:
                     else:
                         st.error("生成失败，请检查 API 或网络配置")
 
-if st.session_state.page == "db_manager":
-    st.header("📁 底层数据预览与统计")
-    st.markdown("---")
+    elif st.session_state.page == "db_manager":
+        st.header("📁 底层数据预览与统计")
+        st.markdown("---")
 
-    st.subheader("📚 RAG 向量知识库状态")
-    rag_stats = rag.get_knowledge_base_stats()
+        st.subheader("📚 RAG 向量知识库状态")
+        rag_stats = rag.get_knowledge_base_stats()
 
-    col1, col2 = st.columns(2)
-    col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
-    col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
+        col1, col2 = st.columns(2)
+        col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
+        col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
 
-    if rag_stats['files']:
-        with st.expander("查看已入库的 PDF 文件列表"):
-            for file_name in rag_stats['files']:
-                st.write(f"- {file_name}")
+        if rag_stats['files']:
+            with st.expander("查看已入库的 PDF 文件列表"):
+                for file_name in rag_stats['files']:
+                    st.write(f"- {file_name}")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    st.subheader("📝 结构化题库数据 (SQLite)")
-    all_qs = db.get_all_questions()
-    if all_qs:
-        # 顺便在这里加上结构化题库的总量统计
-        st.write(f"当前共有 **{len(all_qs)}** 道题目。")
-        df = pd.DataFrame(all_qs)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("结构化数据库目前是空的。")
+        st.subheader("📝 结构化题库数据 (SQLite)")
+        all_qs = db.get_all_questions()
+        if all_qs:
+            # 顺便在这里加上结构化题库的总量统计
+            st.write(f"当前共有 **{len(all_qs)}** 道题目。")
+            df = pd.DataFrame(all_qs)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("结构化数据库目前是空的。")
 
-    st.divider()
-    if st.button("🔙 返回首页", type="primary"):
-        st.session_state.page = "main"
-        st.rerun()
+        st.divider()
+        if st.button("🔙 返回首页", type="primary"):
+            st.session_state.page = "main"
+            st.rerun()
 
 if st.session_state.get('show_toast', False):
     st.toast('✨ AI 题目生成成功！', icon='🎉')
