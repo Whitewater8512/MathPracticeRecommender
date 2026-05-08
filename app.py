@@ -1,4 +1,5 @@
 import time
+import random
 import threading
 import pandas as pd
 import streamlit as st
@@ -325,7 +326,8 @@ else:
             # 下一题按钮（提交后才显示）
             st.divider()
             
-            col1 = st.columns(1)
+            # col1 = st.columns(1)
+            col1 = st.empty()
             
             with col1:
                 if st.button("下一题 (AI生成) ➡️", type="primary"):
@@ -347,7 +349,7 @@ else:
                     while thread.is_alive():
                         # 动态更新占位符的内容
                         loading_placeholder.info(tips[tip_idx % len(tips)])
-                        time.sleep(1.5) # 每 1.5 秒切换一句话
+                        time.sleep(random.uniform(1, 3))  # 每 1-3s 秒切换一句话
                         tip_idx += 1
                         
                     thread.join() # 确保线程完全结束
