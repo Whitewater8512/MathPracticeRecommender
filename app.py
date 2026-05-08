@@ -55,12 +55,15 @@ def render_recommendation_path(user_weakness, recommended_kp):
     
     # 构建节点
     nodes.append(Node(id="User", label="当前用户", size=25, color="#FF6B6B"))
-    nodes.append(Node(id=user_weakness, label=f"弱项:{user_weakness}", size=25, color="#4ECDC4"))
-    nodes.append(Node(id=recommended_kp, label=f"推荐:{recommended_kp}", size=30, color="#FFE66D"))
-    
-    # 构建解释路径 (边)
-    edges.append(Edge(source="User", target=user_weakness, label="知识追踪(BKT)诊断为未掌握"))
-    edges.append(Edge(source=user_weakness, target=recommended_kp, label="Graph-RAG发现关联依赖"))
+
+    if user_weakness == recommended_kp:
+        nodes.append(Node(id=recommended_kp, label=f"弱项且推荐:{recommended_kp}", size=30, color="#FFE66D"))
+        edges.append(Edge(source="User", target=recommended_kp, label="当前处于薄弱项，建议持续巩固"))
+    else:
+        nodes.append(Node(id=user_weakness, label=f"弱项:{user_weakness}", size=25, color="#4ECDC4"))
+        nodes.append(Node(id=recommended_kp, label=f"推荐:{recommended_kp}", size=30, color="#FFE66D"))
+        edges.append(Edge(source="User", target=user_weakness, label="知识追踪(BKT)诊断为未掌握"))
+        edges.append(Edge(source=user_weakness, target=recommended_kp, label="Graph-RAG发现关联依赖"))
     
     # 配置图表
     config = Config(width=700, 
