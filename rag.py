@@ -1,12 +1,13 @@
 import os
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["HF_ENDPOINT"] = "https://huggingface.co"
+os.environ["TRANSFORMERS_OFFLINE"] = "0"
+os.environ["HF_HUB_OFFLINE"] = "0"
 
 os.environ["TORCH_DEVICE"] = "cuda"
 os.environ["WORKERS"] = "1"
 os.environ["MARKER_VRAM_PER_GPU"] = "6"
 
 import chromadb
-import streamlit as st
 from chromadb.utils import embedding_functions
 
 from marker.converters.pdf import PdfConverter
@@ -19,14 +20,12 @@ CHROMA_PERSIST_DIR = "./chroma_db"
 COLLECTION_NAME = "math_textbooks"
 # ===========================================
 
-
 if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
     print(f"已创建 {DATA_FOLDER} 文件夹，请将 PDF 放入其中。")
 
 client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
-@st.cache_resource
 def get_embedding_function():
     return embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"
@@ -45,9 +44,9 @@ def load_pdfs_to_vector_db():
     pdf_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith(".pdf")]
     
     if not pdf_files:
+        print("🔍 未发现任何 PDF 文件。")
         return
 
-    # === 修改 1：查询数据库中已经处理过的文件列表 ===
     try:
         # 获取库中所有的元数据
         existing_data = collection.get(include=["metadatas"])
@@ -152,4 +151,5 @@ def get_knowledge_base_stats() -> dict:
         return {"total_chunks": 0, "total_files": 0, "files": []}
 
 # 自动运行知识库加载
+print("🔍 正在检查并加载 PDF 文件到向量数据库...")
 load_pdfs_to_vector_db()
