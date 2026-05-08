@@ -6,3 +6,4 @@ marker-pdf
 protobuf==3.20.3
 sentence-transformers>=2.2.0
 numpy<2.0.0
+pysqlite3-binary
