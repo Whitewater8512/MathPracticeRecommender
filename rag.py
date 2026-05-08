@@ -26,6 +26,10 @@ if not os.path.exists(DATA_FOLDER):
 
 client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
+<<<<<<< HEAD
+=======
+# @st.cache_resource
+>>>>>>> 056dd376ccba8fe93a2a17f5e3e94d193b418e04
 def get_embedding_function():
     return embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"
@@ -151,5 +155,9 @@ def get_knowledge_base_stats() -> dict:
         return {"total_chunks": 0, "total_files": 0, "files": []}
 
 # 自动运行知识库加载
+<<<<<<< HEAD
 print("🔍 正在检查并加载 PDF 文件到向量数据库...")
 load_pdfs_to_vector_db()
+=======
+load_pdfs_to_vector_db()
+>>>>>>> 056dd376ccba8fe93a2a17f5e3e94d193b418e04
