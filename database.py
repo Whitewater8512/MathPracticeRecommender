@@ -441,9 +441,9 @@ def calculate_proficiency(user_id, kp):
     raw_acc = df['is_correct'].mean() * 100
 
     # ========== 2. BKT模型核心参数配置 ==========
-    P_L0 = 0.4    # 初始掌握概率
-    P_T = 0.05    # 学习转移概率
-    P_S = 0.1     # 失误概率
+    P_L0 = 0.15    # 初始掌握概率
+    P_T = 0.02    # 学习转移概率
+    P_S = 0.15     # 失误概率
     P_G_default = 0.25  # 默认猜测概率（4选1选择题）
 
     # 初始化当前掌握概率
@@ -469,7 +469,11 @@ def calculate_proficiency(user_id, kp):
             posterior_mastery = numerator / denominator if denominator != 0 else current_mastery
 
         # 步骤2：更新下一次答题前的掌握概率（考虑学习效应）
-        current_mastery = posterior_mastery + (1 - posterior_mastery) * P_T
+        next_mastery = posterior_mastery + (1 - posterior_mastery) * P_T
+        if next_mastery - current_mastery > 0.15:
+            current_mastery += 0.15
+        else:
+            current_mastery = next_mastery
 
         # 步骤3：限制掌握概率在 [0, 1] 范围内
         current_mastery = max(0, min(1, current_mastery))
