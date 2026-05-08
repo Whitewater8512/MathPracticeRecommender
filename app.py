@@ -324,52 +324,48 @@ else:
             
             # --- 结果展示与下一题控制区 ---
             if is_disabled:
+                current_correct_answer = q['answer']
+                
+                # 渲染结果反馈
                 if st.session_state.is_correct:
                     st.success("🎉 回答正确！太棒了，继续加油~")
                 else:
                     st.error("❌ 答案错误")
                     if q_type == "choice":
-                        st.info(f"正确答案：{correct_answer}. {json.loads(q['options'])[correct_answer]}")
+                        st.info(f"正确答案：{current_correct_answer}. {json.loads(q['options'])[current_correct_answer]}")
                     else:
-                        st.info(f"正确答案：{correct_answer}")
+                        st.info(f"正确答案：{current_correct_answer}")
                         
                 st.divider()
-            
-            # col1 = st.columns(1)
-            col1 = st.empty()
-            
-            with col1:
-                if st.button("下一题 (AI生成) ➡️", type="primary"):
-                    # 占位符，用于动态替换文字
-                    loading_placeholder = st.empty() 
-                    tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
-                    
-                    # 1. 定义一个后台请求的任务
-                    def generate_task():
-                        load_new_question(force_ai=True)
+                
+                # 此时才渲染下一题按钮，实现完美隔离
+                col1 = st.empty()
+                with col1:
+                    if st.button("下一题 (AI生成) ➡️", type="primary"):
+                        loading_placeholder = st.empty() 
+                        tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
                         
-                    # 2. 开启子线程去跑大模型 API
-                    thread = threading.Thread(target=generate_task)
-                    add_script_run_ctx(thread) # 将 Streamlit 的上下文传递给子线程
-                    thread.start()
-                    
-                    # 3. 主线程在这里循环切换提示文字，直到子线程结束
-                    tip_idx = 0
-                    while thread.is_alive():
-                        # 动态更新占位符的内容
-                        loading_placeholder.info(tips[tip_idx % len(tips)])
-                        time.sleep(random.uniform(1, 3))  # 每 1-3s 秒切换一句话
-                        tip_idx += 1
+                        def generate_task():
+                            load_new_question(force_ai=True)
+                            
+                        thread = threading.Thread(target=generate_task)
+                        add_script_run_ctx(thread) 
+                        thread.start()
                         
-                    thread.join() # 确保线程完全结束
-                    loading_placeholder.empty() # 清除加载提示
-                    
-                    # 4. 判断结果并刷新
-                    if st.session_state.current_q:
-                        st.session_state.show_toast = True
-                        st.rerun()
-                    else:
-                        st.error("生成失败，请检查配置")
+                        tip_idx = 0
+                        while thread.is_alive():
+                            loading_placeholder.info(tips[tip_idx % len(tips)])
+                            time.sleep(random.uniform(1, 3)) 
+                            tip_idx += 1
+                            
+                        thread.join() 
+                        loading_placeholder.empty() 
+                        
+                        if st.session_state.current_q:
+                            st.session_state.show_toast = True
+                            st.rerun()
+                        else:
+                            st.error("生成失败，请检查配置")
 
 if st.session_state.page == "db_manager":
     st.header("📁 底层数据预览与统计")
