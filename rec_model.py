@@ -4,6 +4,7 @@ os.environ["OMP_NUM_THREADS"] = "4"
 
 import database as db
 import rag
+import json
 import llm_api
 import random
 import pandas as pd
@@ -13,9 +14,6 @@ import numpy as np
 try:
     USER_EMB = np.load('checkpoints/mkr_user_emb.npy')
     ITEM_EMB = np.load('checkpoints/mkr_item_emb.npy')
-    # 理想情况下，你还需要加载映射字典： db_id -> matrix_index
-    # user_id2idx = json.load(open('checkpoints/user_map.json'))
-    # item_id2idx = json.load(open('checkpoints/item_map.json'))
     MKR_LOADED = True
     print("✅ 成功加载 MKR Embedding 权重！")
 except Exception as e:
@@ -23,10 +21,27 @@ except Exception as e:
     MKR_LOADED = False
     print(f"⚠️ MKR 权重未加载，将使用默认推荐策略。原因: {e}")
 
+try:
+    with open('checkpoints/user_map.json', 'r') as f:
+        USER_TO_IDX = json.load(f)
+    with open('checkpoints/item_map.json', 'r') as f:
+        ITEM_TO_IDX = json.load(f)
+except Exception as e:
+    print(f"⚠️ ID 映射文件加载失败，将使用默认推荐策略。原因: {e}")
+    USER_TO_IDX, ITEM_TO_IDX = {}, {}
+
+def get_mkr_score(user_id, q_id):
+    u_idx = USER_TO_IDX.get(str(user_id))
+    i_idx = ITEM_TO_IDX.get(str(q_id))
+
+    if u_idx is not None and i_idx is not None:
+        u_vector = USER_EMB[u_idx]
+        i_vector = ITEM_EMB[i_idx]
+        return np.dot(u_vector, i_vector)
+    print(f"⚠️ 无法计算 MKR 分数，缺失用户或题目索引 (user_id: {user_id}, q_id: {q_id})")
+    return 0.0
+
 def recommend_next_step(user_id, current_kp, force_ai=False):
-    """
-    决策中心：融合了 MKR 深度学习模型 和 LLM 生成机制
-    """
     local_q = None
     
     # 1. 如果不强制使用 AI，我们优先从本地题库找题
@@ -41,7 +56,6 @@ def recommend_next_step(user_id, current_kp, force_ai=False):
         conn.close()
 
         if not df_candidates.empty:
-            # === 👇 核心融合：MKR 模型打分逻辑 👇 ===
             if MKR_LOADED:
                 best_score = -float('inf')
                 best_row_index = 0
@@ -116,10 +130,6 @@ def recommend_next_step(user_id, current_kp, force_ai=False):
     return "local", local_q
 
 def batch_auto_tag_database(force_all=False):
-    """
-    自动扫描并打标
-    :param force_all: 是否强制对所有题目重新打标
-    """
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 启动 AI 自动打标程序...")
     
     # 根据参数选择是“只打未分类”还是“全部重打”
@@ -133,7 +143,7 @@ def batch_auto_tag_database(force_all=False):
     if not questions_to_tag:
         print("💡 题库中没有符合条件的题目，任务结束。")
         return
-        
+
     success_count = 0
     for i, q in enumerate(questions_to_tag):
         print(f"[{i+1}/{len(questions_to_tag)}] 正在处理题目 ID: {q['q_id']} ... ", end="")

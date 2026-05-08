@@ -138,6 +138,36 @@ else:
                 load_new_question()
         
         st.divider()
+        st.subheader("📈 考研数学熟练度看板")
+        if kps:
+            with st.expander("点击展开各章节详细熟练度", expanded=False):
+                for kp in kps:
+                    # 计算该知识点的熟练度
+                    _, _, rec_coef = db.calculate_proficiency(st.session_state.user_id, kp)
+                    prof = min(max(int(rec_coef), 0), 100) # 限制在 0-100 之间
+                    
+                    # 动态决定颜色：低于40红色，40-70黄色，70以上绿色
+                    if prof < 40:
+                        bar_color = "#FF4B4B" # 红色 (警告)
+                    elif prof < 70:
+                        bar_color = "#FFAA00" # 黄色 (提升中)
+                    else:
+                        bar_color = "#00CC96" # 绿色 (已掌握)
+                        
+                    # 使用 HTML 渲染带颜色的自定义进度条
+                    st.markdown(f"""
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 14px;">
+                            <span style="font-weight: 500;">{kp}</span>
+                            <span style="color: {bar_color}; font-weight: bold;">{prof}%</span>
+                        </div>
+                        <div style="width: 100%; background-color: #444444; border-radius: 5px; height: 8px;">
+                            <div style="width: {prof}%; background-color: {bar_color}; height: 8px; border-radius: 5px; transition: width 0.5s;"></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        st.divider()
         if st.button("📊 查看知识点答题报告", use_container_width=True):
             go_to_report()
             st.rerun()
@@ -293,17 +323,12 @@ else:
             # 下一题按钮（提交后才显示）
             st.divider()
             
-            col1, col2 = st.columns(2)
+            col1 = st.columns(1)
             
             with col1:
-                if st.button("下一题 (题库随机) ➡️"):
-                    load_new_question()
-                    st.rerun()
-            with col2:
-                if st.button("✨ AI 生成新题", type="primary"):
+                if st.button("下一题 (AI生成) ➡️", type="primary"):
                     with st.spinner("AI 正在根据知识点精心出题..."):
-                        # 只需这一行，逻辑全部在 rec_model 里
-                        load_new_question(force_ai=True) 
+                        load_new_question(force_ai=True)
                         if st.session_state.current_q:
                             st.success("AI 题目生成成功！")
                             st.rerun()
