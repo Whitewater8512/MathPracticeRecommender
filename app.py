@@ -1,4 +1,5 @@
-import os
+import time
+import threading
 import pandas as pd
 import streamlit as st
 import database as db
@@ -7,6 +8,7 @@ import rag as rag
 import rec_model
 import json
 from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # 初始化数据库
 db.init_db()
@@ -327,17 +329,36 @@ else:
             
             with col1:
                 if st.button("下一题 (AI生成) ➡️", type="primary"):
-                    placeholder = st.empty()
-                    tips = ["正在翻阅历年真题...", "AI 正在为你量身定制难度...", "深度思考中..."]
-                    with st.spinner(tips[0]):
+                    # 占位符，用于动态替换文字
+                    loading_placeholder = st.empty() 
+                    tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
+                    
+                    # 1. 定义一个后台请求的任务
+                    def generate_task():
                         load_new_question(force_ai=True)
-                        if st.session_state.current_q:
-                            st.success("AI 题目生成成功！")
-                            st.rerun()
-                        else:
-                            st.error("生成失败，请检查配置")
-        else:
-            st.warning("该知识点暂无可用题目，请先在题库中添加题目~")
+                        
+                    # 2. 开启子线程去跑大模型 API
+                    thread = threading.Thread(target=generate_task)
+                    add_script_run_ctx(thread) # 将 Streamlit 的上下文传递给子线程
+                    thread.start()
+                    
+                    # 3. 主线程在这里循环切换提示文字，直到子线程结束
+                    tip_idx = 0
+                    while thread.is_alive():
+                        # 动态更新占位符的内容
+                        loading_placeholder.info(tips[tip_idx % len(tips)])
+                        time.sleep(1.5) # 每 1.5 秒切换一句话
+                        tip_idx += 1
+                        
+                    thread.join() # 确保线程完全结束
+                    loading_placeholder.empty() # 清除加载提示
+                    
+                    # 4. 判断结果并刷新
+                    if st.session_state.current_q:
+                        st.session_state.show_toast = True
+                        st.rerun()
+                    else:
+                        st.error("生成失败，请检查配置")
 
 if st.session_state.page == "db_manager":
     st.header("📁 底层数据预览与统计")
@@ -371,3 +392,7 @@ if st.session_state.page == "db_manager":
     if st.button("🔙 返回首页", type="primary"):
         st.session_state.page = "main"
         st.rerun()
+
+if st.session_state.get('show_toast', False):
+    st.toast('✨ AI 题目生成成功！', icon='🎉')
+    st.session_state.show_toast = False
