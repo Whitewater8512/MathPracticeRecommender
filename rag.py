@@ -6,6 +6,7 @@ os.environ["WORKERS"] = "1"
 os.environ["MARKER_VRAM_PER_GPU"] = "6"
 
 import chromadb
+import streamlit as st
 from chromadb.utils import embedding_functions
 
 from marker.converters.pdf import PdfConverter
@@ -25,9 +26,13 @@ if not os.path.exists(DATA_FOLDER):
 
 client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
-embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
-)
+@st.cache_resource
+def get_embedding_function():
+    return embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
+    )
+
+embedding_func = get_embedding_function()
 
 collection = client.get_or_create_collection(
     name=COLLECTION_NAME,

@@ -45,7 +45,7 @@ def generate_math_question(knowledge_point: str, difficulty: int = 2, question_t
 2. 【选项格式】如果是选择题，选项内容必须存放在 `options` 字段中，且选项里的**数学公式必须用 $ 包裹**（例如 "$ \\frac{1}{2} $"）。如果是填空题，`options` 输出空字符串。
 3. 【公式规范】数学公式请【必须且只能】使用 LaTeX 语法，用单个 $ 包裹内联公式，用 $$ 包裹块级公式。绝不能使用 Markdown 的反引号！
 4. 【强制打草稿】你必须先在 explanation 字段中写出详尽的推导过程。经过严密计算后，再将最终结果填入 answer 字段。
-5. 【强制输出JSON】必须严格按照给定的 JSON Schema 输出。
+5. 【强制输出JSON】必须严格按照给定的 JSON Schema 输出精简explanation】在核心公式和步骤即可，字数控制在 150 字以内。
 """
 
     user_content = f"""

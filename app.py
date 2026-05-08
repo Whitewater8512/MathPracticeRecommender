@@ -327,7 +327,9 @@ else:
             
             with col1:
                 if st.button("下一题 (AI生成) ➡️", type="primary"):
-                    with st.spinner("AI 正在根据知识点精心出题..."):
+                    placeholder = st.empty()
+                    tips = ["正在翻阅历年真题...", "AI 正在为你量身定制难度...", "深度思考中..."]
+                    with st.spinner(tips[0]):
                         load_new_question(force_ai=True)
                         if st.session_state.current_q:
                             st.success("AI 题目生成成功！")

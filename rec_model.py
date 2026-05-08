@@ -10,25 +10,31 @@ import random
 import pandas as pd
 from datetime import datetime
 import numpy as np
+import streamlit as st
 
-try:
-    USER_EMB = np.load('checkpoints/mkr_user_emb.npy')
-    ITEM_EMB = np.load('checkpoints/mkr_item_emb.npy')
-    MKR_LOADED = True
-    print("✅ 成功加载 MKR Embedding 权重！")
-except Exception as e:
-    USER_EMB, ITEM_EMB = None, None
-    MKR_LOADED = False
-    print(f"⚠️ MKR 权重未加载，将使用默认推荐策略。原因: {e}")
+@st.cache_resource
+def load_mkr_weights():
+    try:
+        user_emb = np.load('checkpoints/mkr_user_emb.npy')
+        item_emb = np.load('checkpoints/mkr_item_emb.npy')
+        return user_emb, item_emb, True
+    except Exception as e:
+        return None, None, False
 
-try:
-    with open('checkpoints/user_map.json', 'r') as f:
-        USER_TO_IDX = json.load(f)
-    with open('checkpoints/item_map.json', 'r') as f:
-        ITEM_TO_IDX = json.load(f)
-except Exception as e:
-    print(f"⚠️ ID 映射文件加载失败，将使用默认推荐策略。原因: {e}")
-    USER_TO_IDX, ITEM_TO_IDX = {}, {}
+@st.cache_resource
+def load_id_maps():
+    try:
+        with open('checkpoints/user_map.json', 'r') as f:
+            u_map = json.load(f)
+        with open('checkpoints/item_map.json', 'r') as f:
+            i_map = json.load(f)
+        return u_map, i_map
+    except Exception:
+        return {}, {}
+
+# 全局调用一次（利用缓存）
+USER_EMB, ITEM_EMB, MKR_LOADED = load_mkr_weights()
+USER_TO_IDX, ITEM_TO_IDX = load_id_maps()
 
 def get_mkr_score(user_id, q_id):
     u_idx = USER_TO_IDX.get(str(user_id))
