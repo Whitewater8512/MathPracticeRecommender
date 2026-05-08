@@ -319,13 +319,13 @@ else:
                         st.session_state.is_correct = is_correct
                         
                         db.save_answer(st.session_state.user_id, q_id, is_correct)
-                        
-                        st.rerun() 
+
+                        st.rerun()
             
             # --- 结果展示与下一题控制区 ---
             if is_disabled:
                 current_correct_answer = q['answer']
-                
+
                 # 渲染结果反馈
                 if st.session_state.is_correct:
                     st.success("🎉 回答正确！太棒了，继续加油~")
@@ -335,7 +335,7 @@ else:
                         st.info(f"正确答案：{current_correct_answer}. {json.loads(q['options'])[current_correct_answer]}")
                     else:
                         st.info(f"正确答案：{current_correct_answer}")
-                        
+
                 st.divider()
                 
                 # 此时才渲染下一题按钮，实现完美隔离
@@ -351,16 +351,16 @@ else:
                         thread = threading.Thread(target=generate_task)
                         add_script_run_ctx(thread) 
                         thread.start()
-                        
+
                         tip_idx = 0
                         while thread.is_alive():
                             loading_placeholder.info(tips[tip_idx % len(tips)])
-                            time.sleep(random.uniform(1, 3)) 
+                            time.sleep(random.uniform(1, 3))
                             tip_idx += 1
-                            
-                        thread.join() 
+
+                        thread.join()
                         loading_placeholder.empty() 
-                        
+
                         if st.session_state.current_q:
                             st.session_state.show_toast = True
                             st.rerun()
