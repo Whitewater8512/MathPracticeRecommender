@@ -26,7 +26,7 @@ if not os.path.exists(DATA_FOLDER):
 
 client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
-@st.cache_resource
+# @st.cache_resource
 def get_embedding_function():
     return embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"
