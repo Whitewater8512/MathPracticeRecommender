@@ -29,7 +29,11 @@ if 'current_q' not in st.session_state:
 if 'page' not in st.session_state:
     st.session_state.page = "login" # 页面路由：login, main, report
 if 'answer_submitted' not in st.session_state:
-    st.session_state.answer_submitted = False # 控制提交后状态
+    st.session_state.answer_submitted = False
+if 'answered_q_id' not in st.session_state:
+    st.session_state.answered_q_id = None
+if 'is_correct' not in st.session_state:
+    st.session_state.is_correct = None
 
 # --- 页面跳转回调函数 ---
 def logout():
@@ -87,6 +91,8 @@ def load_new_question(force_ai=False):
         st.session_state.current_q = q
         st.session_state.q_source = source
     st.session_state.answer_submitted = False
+    st.session_state.answered_q_id = None
+    st.session_state.is_correct = None
 
 # 1. 登录/注册页面
 if not st.session_state.logged_in:
@@ -256,78 +262,78 @@ else:
             st.caption(f"难度：{'⭐'*q['difficulty']} | 题型：{'选择题' if q_type=='choice' else '填空题'}")
             st.divider()
             
-            # 答题区域（分题型渲染）
+            q_id = q['q_id']
+            is_disabled = (st.session_state.answer_submitted and st.session_state.answered_q_id == q_id)
+            
             st.subheader("✍️ 你的答案")
             with st.form("answer_form", clear_on_submit=False):
                 user_answer = None
-                # 选择题：渲染单选按钮，支持LaTeX选项
+                
                 if q_type == "choice":
                     options = json.loads(q['options'])
-                    # 格式化选项为 ["A. xxx", "B. xxx"] 格式
                     option_list = [f"{key}. {value}" for key, value in options.items()]
                     user_selected = st.radio(
                         "请选择正确选项",
                         options=option_list,
-                        disabled=st.session_state.answer_submitted,
+                        disabled=is_disabled, # 使用新的硬锁
                         label_visibility="collapsed"
                     )
-                    # 提取用户选择的选项字母
                     if user_selected:
                         user_answer = user_selected.split(".")[0]
-                
-                # 填空题：强制数字输入，仅能输入数字，支持小数/整数
+                        
                 elif q_type == "blank":
                     user_answer = st.number_input(
                         "请输入最终数字答案（支持小数）",
                         format="%.4f",
                         step=0.001,
-                        disabled=st.session_state.answer_submitted,
+                        disabled=is_disabled,
                         label_visibility="collapsed"
                     )
                 
-                # 提交按钮
                 submitted = st.form_submit_button(
                     "提交答案", 
                     type="primary", 
                     use_container_width=True,
-                    disabled=st.session_state.answer_submitted
+                    disabled=is_disabled
                 )
                 
-                # 提交后的判题逻辑
+                # 提交判定
                 if submitted:
-                    st.session_state.answer_submitted = True
-                    correct_answer = q['answer']
-                    is_correct = False
-                    
-                    # 选择题判题：字母完全匹配
-                    if q_type == "choice":
-                        is_correct = (user_answer == correct_answer)
-                    
-                    # 填空题判题：数值匹配，允许0.001的浮点误差
-                    elif q_type == "blank":
-                        try:
-                            correct_num = float(correct_answer)
-                            user_num = float(user_answer)
-                            is_correct = abs(user_num - correct_num) < 0.001
-                        except:
-                            is_correct = False
-                    
-                    # 保存答题记录
-                    db.save_answer(st.session_state.user_id, q['q_id'], is_correct)
-                    
-                    # 结果反馈
-                    if is_correct:
-                        st.success("🎉 回答正确！太棒了，继续加油~")
-                    else:
-                        st.error("❌ 答案错误")
-                        # 展示正确答案
+                    if not is_disabled:
+                        st.session_state.answer_submitted = True
+                        st.session_state.answered_q_id = q_id
+                        
+                        correct_answer = q['answer']
+                        is_correct = False
+                        
                         if q_type == "choice":
-                            st.info(f"正确答案：{correct_answer}. {json.loads(q['options'])[correct_answer]}")
-                        else:
-                            st.info(f"正确答案：{correct_answer}")
+                            is_correct = (user_answer == correct_answer)
+                        elif q_type == "blank":
+                            try:
+                                correct_num = float(correct_answer)
+                                user_num = float(user_answer)
+                                is_correct = abs(user_num - correct_num) < 0.001
+                            except:
+                                is_correct = False
+                        
+                        st.session_state.is_correct = is_correct
+                        
+                        db.save_answer(st.session_state.user_id, q_id, is_correct)
+                        
+                        st.rerun() 
             
-            # 下一题按钮（提交后才显示）
-            st.divider()
+            # --- 结果展示与下一题控制区 ---
+            if is_disabled:
+                if st.session_state.is_correct:
+                    st.success("🎉 回答正确！太棒了，继续加油~")
+                else:
+                    st.error("❌ 答案错误")
+                    if q_type == "choice":
+                        st.info(f"正确答案：{correct_answer}. {json.loads(q['options'])[correct_answer]}")
+                    else:
+                        st.info(f"正确答案：{correct_answer}")
+                        
+                st.divider()
             
             # col1 = st.columns(1)
             col1 = st.empty()

@@ -51,7 +51,7 @@ def generate_math_question(knowledge_point: str, difficulty: int = 2, question_t
     user_content = f"""
 知识点: {knowledge_point}
 难度: {difficulty} (1-5)
-题型: {'选择题' if question_type == 'choice' else '填空题(答案为纯数字。尽量保持整数，如必须是小数，说明小数点后的位数)'}
+题型: {'选择题' if question_type == 'choice' else '填空题(答案为纯数字。尽量保持整数，如必须是小数，说明小数点后的位数，不超过4位小数)'}
 """
 
     if rag_context:
