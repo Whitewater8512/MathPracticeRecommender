@@ -5,10 +5,8 @@ from datetime import datetime
 import json
 import os
 
-# 数据库文件名 (确保路径稳定)
-DB_FILE = os.path.join(os.path.dirname(__file__), '..', 'tutor.db')
-# 简化处理：直接放在当前运行目录
-DB_FILE = 'tutor.db'
+# 数据库文件名
+DB_FILE = "mpr.db"
 
 def init_db():
     """安全初始化数据库"""
@@ -34,15 +32,13 @@ def init_db():
                       difficulty INTEGER,
                       question_type TEXT,
                       options TEXT,
-                      answer TEXT)''')
-        # 插入初始数据
+                      answer TEXT,
+                      explanation TEXT)''')
         _insert_sample_data(c)
     else:
-        # 简单的兼容性检查：如果表存在但没有 question_type 列，说明是旧版本
         try:
             c.execute("SELECT question_type FROM questions LIMIT 1")
         except sqlite3.OperationalError:
-            # 旧版本 detected，强制重建
             print("检测到旧版本数据库，正在重建...")
             c.execute("DROP TABLE questions")
             c.execute('''CREATE TABLE questions
@@ -52,7 +48,8 @@ def init_db():
                           difficulty INTEGER,
                           question_type TEXT,
                           options TEXT,
-                          answer TEXT)''')
+                          answer TEXT,
+                          explanation TEXT)''')
             _insert_sample_data(c)
 
     # 3. 答题记录表
@@ -551,14 +548,66 @@ def get_untagged_questions():
     conn.close()
     return df.to_dict('records')
 
-def insert_ai_question(content, kp, diff, q_type, options, answer):
+def insert_ai_question(content, kp, diff, q_type, options, answer, explanation=""):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
-        INSERT INTO questions (content, knowledge_point, difficulty, question_type, options, answer)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (content, kp, diff, q_type, options, answer))
+        INSERT INTO questions (content, knowledge_point, difficulty, question_type, options, answer, explanation)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (content, kp, diff, q_type, options, answer, explanation))
     new_id = c.lastrowid
     conn.commit()
     conn.close()
     return new_id
+
+def get_all_bkt_scores(user_id, kg_nodes):
+    conn = sqlite3.connect(DB_FILE)
+    # 一次性取出该用户的所有答题记录
+    df = pd.read_sql_query("""
+        SELECT q.knowledge_point, r.is_correct, q.question_type 
+        FROM records r 
+        JOIN questions q ON r.q_id = q.q_id
+        WHERE r.user_id = ?
+    """, conn, params=(user_id,))
+    conn.close()
+
+    # BKT 模型参数
+    P_L0 = 0.15; P_T = 0.02; P_S = 0.15; P_G_default = 0.25
+    bkt_scores = {}
+
+    # 按知识点分组计算
+    grouped = df.groupby('knowledge_point')
+    
+    for node in kg_nodes:
+        if node not in grouped.groups:
+            bkt_scores[node] = P_L0 * 100 # 没做过的默认 15分
+            continue
+            
+        node_df = grouped.get_group(node)
+        current_mastery = P_L0
+        
+        for _, row in node_df.iterrows():
+            is_correct = row['is_correct']
+            q_type = row['question_type']
+            P_G = 0.05 if q_type == 'blank' else P_G_default
+
+            if is_correct == 1:
+                numerator = current_mastery * (1 - P_S)
+                denominator = numerator + (1 - current_mastery) * P_G
+            else:
+                numerator = current_mastery * P_S
+                denominator = numerator + (1 - current_mastery) * (1 - P_G)
+                
+            posterior_mastery = numerator / denominator if denominator != 0 else current_mastery
+            next_mastery = posterior_mastery + (1 - posterior_mastery) * P_T
+            
+            if next_mastery - current_mastery > 0.15:
+                current_mastery += 0.15
+            else:
+                current_mastery = next_mastery
+                
+            current_mastery = max(0, min(1, current_mastery))
+            
+        bkt_scores[node] = current_mastery * 100
+        
+    return bkt_scores

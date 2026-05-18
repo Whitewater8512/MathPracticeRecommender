@@ -1,18 +1,24 @@
+import os
+os.environ["CHROMA_TELEMETRY"] = "false"
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
+
 import time
 import random
+import graph_rag
 import threading
 import pandas as pd
 import streamlit as st
 import database as db
 import llm_api as llm_api
 import rag as rag
+
+# 初始化数据库
+db.init_db()
+
 import rec_model
 import json
 from streamlit_agraph import agraph, Node, Edge, Config
 from streamlit.runtime.scriptrunner import add_script_run_ctx
-
-# 初始化数据库
-db.init_db()
 
 # --- 页面全局配置 ---
 st.set_page_config(page_title="智能数学推题系统", page_icon="📐", layout="wide")
@@ -51,38 +57,14 @@ def go_to_main():
     st.session_state.current_q = None 
     st.session_state.answer_submitted = False
 
-def render_recommendation_path(user_weakness, recommended_kp):
-    st.subheader("🧠 AI 推荐决策图谱")
-
-    nodes = []
-    edges = []
-
-    # 构建节点
-    nodes.append(Node(id="User", label="当前用户", size=25, color="#FF6B6B"))
-
-    if user_weakness == recommended_kp:
-        nodes.append(Node(id=recommended_kp, label=f"弱项且推荐:{recommended_kp}", size=30, color="#FFE66D"))
-        edges.append(Edge(source="User", target=recommended_kp, label="当前处于薄弱项，建议持续巩固"))
-    else:
-        nodes.append(Node(id=user_weakness, label=f"弱项:{user_weakness}", size=25, color="#4ECDC4"))
-        nodes.append(Node(id=recommended_kp, label=f"推荐:{recommended_kp}", size=30, color="#FFE66D"))
-        edges.append(Edge(source="User", target=user_weakness, label="知识追踪(BKT)诊断为未掌握"))
-        edges.append(Edge(source=user_weakness, target=recommended_kp, label="Graph-RAG发现关联依赖"))
-
-    # 配置图表
-    config = Config(width=700, 
-                    height=300, 
-                    directed=True,
-                    physics=True, 
-                    hierarchical=False)
-
-    # 渲染
-    agraph(nodes=nodes, edges=edges, config=config)
-
 def load_new_question(force_ai=False):
     """使用推荐引擎加载题目，支持强制 AI 模式"""
+    if 'path_logs' in st.session_state:
+        del st.session_state.path_logs
+    if 'recommended_kp' in st.session_state:
+        del st.session_state.recommended_kp
+
     if st.session_state.current_kp:
-        # 统一调用 rec_model
         source, q = rec_model.recommend_next_step(
             st.session_state.user_id, 
             st.session_state.current_kp, 
@@ -133,54 +115,51 @@ else:
     with st.sidebar:
         st.markdown(f"### 👤 用户ID：{st.session_state.user_id}")
         st.divider()
-        
-        # 获取所有知识点
+
+        # 知识点选择器
         kps = db.get_all_knowledge_points()
         if not kps:
             st.warning("题库暂无知识点，请先初始化数据库")
         else:
-            # 如果尚未选中当前知识点，则默认初始化为第一个
-            if st.session_state.current_kp not in kps:
-                st.session_state.current_kp = kps[0]
+            default_index = 0
+            if st.session_state.current_kp and st.session_state.current_kp in kps:
+                default_index = kps.index(st.session_state.current_kp)
+            selected_kp = st.selectbox("📚 选择练习知识点", kps, index=default_index)
             
-            st.subheader("📈 考研数学熟练度看板")
-            st.caption("💡 点击对应章节名称即可跳转至该知识点练习")
-            
-            with st.expander("点击展开各章节详细熟练度", expanded=True):
+            # 切换知识点时重置题目
+            if selected_kp != st.session_state.current_kp:
+                st.session_state.current_kp = selected_kp
+                load_new_question()
+        
+        st.divider()
+        st.subheader("📈 考研数学熟练度看板")
+        if kps:
+            with st.expander("点击展开各章节详细熟练度", expanded=False):
                 for kp in kps:
                     # 计算该知识点的熟练度
                     _, _, rec_coef = db.calculate_proficiency(st.session_state.user_id, kp)
                     prof = min(max(int(rec_coef), 0), 100) # 限制在 0-100 之间
                     
-                    # 动态决定颜色
+                    # 动态决定颜色：低于40红色，40-70黄色，70以上绿色
                     if prof < 40:
                         bar_color = "#FF4B4B" # 红色 (警告)
                     elif prof < 70:
                         bar_color = "#FFAA00" # 黄色 (提升中)
                     else:
                         bar_color = "#00CC96" # 绿色 (已掌握)
-                    
-                    # 使用 st.columns 实现左侧按钮跳转，右侧进度条展示
-                    col_btn, col_bar = st.columns([5, 5], vertical_alignment="center")
-                    
-                    with col_btn:
-                        # 当前正在练习的章节增加提示符
-                        prefix = "👉 " if kp == st.session_state.current_kp else ""
-                        if st.button(f"{prefix}{kp}", key=f"nav_{kp}", use_container_width=True):
-                            st.session_state.current_kp = kp
-                            load_new_question()
-                            st.rerun()
-                            
-                    with col_bar:
-                        # 渲染带颜色的自定义进度条
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: center; width: 100%;">
-                            <div style="width: 100%; background-color: #444444; border-radius: 5px; height: 10px; margin-right: 8px;">
-                                <div style="width: {prof}%; background-color: {bar_color}; height: 10px; border-radius: 5px; transition: width 0.5s;"></div>
-                            </div>
-                            <span style="color: {bar_color}; font-weight: bold; font-size: 13px;">{prof}%</span>
+                        
+                    # 使用 HTML 渲染带颜色的自定义进度条
+                    st.markdown(f"""
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 14px;">
+                            <span style="font-weight: 500;">{kp}</span>
+                            <span style="color: {bar_color}; font-weight: bold;">{prof}%</span>
                         </div>
-                        """, unsafe_allow_html=True)
+                        <div style="width: 100%; background-color: #444444; border-radius: 5px; height: 8px;">
+                            <div style="width: {prof}%; background-color: {bar_color}; height: 8px; border-radius: 5px; transition: width 0.5s;"></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         st.divider()
         if st.button("📊 查看知识点答题报告", use_container_width=True):
@@ -240,7 +219,7 @@ else:
             st.rerun()
 
     # B. 核心刷题页面
-    elif st.session_state.page == "main":
+    else:
         st.header(f"✏️ 知识点练习：{st.session_state.current_kp}")
         st.markdown("---")
 
@@ -253,12 +232,16 @@ else:
             q = st.session_state.current_q
             q_type = q['question_type']
 
-            with st.expander("💡 为什么推荐这道题？点击查看 AI 推荐图谱"):
-                weaks = db.get_user_weak_points(st.session_state.user_id)
-                user_weakness = weaks[0] if weaks else "基础知识"
-                
-                render_recommendation_path(user_weakness, st.session_state.current_kp)
-
+            with st.expander("💡 为什么推荐这道题？点击查看 AI 动态图谱路由"):
+                if 'path_logs' in st.session_state and 'recommended_kp' in st.session_state:
+                    kg_vis = graph_rag.GraphRAG()
+                    kg_vis.render_routing_visualization(
+                        target_kp=st.session_state.current_kp, 
+                        recommended_kp=st.session_state.recommended_kp, 
+                        path_logs=st.session_state.path_logs
+                    )
+                else:
+                    st.write("当前知识点掌握度良好，或为直接指定的知识点，未触发降维路由。")
             # 题干展示
             st.subheader("📄 题目")
             st.markdown(f"### {q['content']}")
@@ -275,14 +258,19 @@ else:
                 if q_type == "choice":
                     options = json.loads(q['options'])
                     option_list = [f"{key}. {value}" for key, value in options.items()]
+                    option_list.append("🤷‍♂️ 我不知道 (直接看解析)")
+                    
                     user_selected = st.radio(
                         "请选择正确选项",
                         options=option_list,
-                        disabled=is_disabled, # 使用硬锁
+                        disabled=is_disabled, 
                         label_visibility="collapsed"
                     )
                     if user_selected:
-                        user_answer = user_selected.split(".")[0]
+                        if "我不知道" in user_selected:
+                            user_answer = "我不知道"
+                        else:
+                            user_answer = user_selected.split(".")[0]
                         
                 elif q_type == "blank":
                     user_answer = st.number_input(
@@ -292,19 +280,11 @@ else:
                         disabled=is_disabled,
                         label_visibility="collapsed"
                     )
+                    st.caption("💡 如果不会做，可以直接点击提交查看解析。")
                 
-                # 动态生成提交按钮的文案与反馈
-                if is_disabled:
-                    if st.session_state.is_correct:
-                        submit_label = "✅ 恭喜你，回答正确！"
-                    else:
-                        submit_label = f"❌ 回答错误，正确答案是：{q['answer']}"
-                else:
-                    submit_label = "提交答案"
-
                 submitted = st.form_submit_button(
-                    submit_label, 
-                    type="secondary" if is_disabled else "primary", 
+                    "提交答案", 
+                    type="primary", 
                     use_container_width=True,
                     disabled=is_disabled
                 )
@@ -319,7 +299,10 @@ else:
                         is_correct = False
                         
                         if q_type == "choice":
-                            is_correct = (user_answer == correct_answer)
+                            if user_answer == "我不知道":
+                                is_correct = False
+                            else:
+                                is_correct = (user_answer == correct_answer)
                         elif q_type == "blank":
                             try:
                                 correct_num = float(correct_answer)
@@ -334,86 +317,81 @@ else:
 
                         st.rerun()
             
+            if is_disabled and q.get('explanation'):
+                clean_exp = q['explanation'].replace('\\n', '\n').replace('\\\\n', '\n')
+                st.info(f"💡 **AI 深度解析**:\n\n{q['explanation']}")
+            
             # --- 结果展示与下一题控制区 ---
             col1 = st.empty()
             with col1:
-                if st.button("下一题 (AI生成) ➡️", type="primary"):
-                    loading_placeholder = st.empty() 
-                    tips = ["🔍 正在翻阅历年真题...", "🧠 结合你的弱项量身定制难度...", "✍️ 正在验算最后一步推导...", "📐 格式化 LaTeX 数学公式..."]
-                    
-                    # 1. 准备一个普通的字典容器，用来接收子线程的数据
-                    thread_result = {}
-                    
-                    def generate_task():
-                        # 2. 耗时的模型推荐逻辑放在子线程
+                if st.button("下一题 (AI生成) ➡️", type="primary", disabled=not is_disabled):
+                    with st.spinner("正在获取题目..."):
                         src, new_q = rec_model.recommend_next_step(
                             st.session_state.user_id, 
                             st.session_state.current_kp, 
                             force_ai=True
                         )
-                        thread_result['source'] = src
-                        thread_result['q'] = new_q
                         
-                    thread = threading.Thread(target=generate_task)
-                    add_script_run_ctx(thread) 
-                    thread.start()
-                    
-                    tip_idx = 0
-                    while thread.is_alive():
-                        loading_placeholder.info(tips[tip_idx % len(tips)])
-                        time.sleep(random.uniform(1, 3)) 
-                        tip_idx += 1
-                        
-                    thread.join() 
-                    loading_placeholder.empty() 
-                    
-                    # 3. 线程结束，回到主线程！在这里安全地更新全局状态
-                    if thread_result.get('q'):
-                        st.session_state.current_q = thread_result['q']
-                        st.session_state.q_source = thread_result['source']
-                        
-                        # 彻底清空上一题的状态锁
-                        st.session_state.answer_submitted = False
-                        st.session_state.answered_q_id = None
-                        st.session_state.is_correct = None
-                        
-                        st.session_state.show_toast = True
-                        st.rerun()
-                    else:
-                        st.error("生成失败，请检查 API 或网络配置")
-
-    elif st.session_state.page == "db_manager":
-        st.header("📁 底层数据预览与统计")
-        st.markdown("---")
-
-        st.subheader("📚 RAG 向量知识库状态")
-        rag_stats = rag.get_knowledge_base_stats()
-
-        col1, col2 = st.columns(2)
-        col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
-        col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
-
-        if rag_stats['files']:
-            with st.expander("查看已入库的 PDF 文件列表"):
-                for file_name in rag_stats['files']:
-                    st.write(f"- {file_name}")
-
-        st.markdown("---")
-
-        st.subheader("📝 结构化题库数据 (SQLite)")
-        all_qs = db.get_all_questions()
-        if all_qs:
-            # 顺便在这里加上结构化题库的总量统计
-            st.write(f"当前共有 **{len(all_qs)}** 道题目。")
-            df = pd.DataFrame(all_qs)
-            st.dataframe(df, use_container_width=True)
+                        if new_q:
+                            st.session_state.current_q = new_q
+                            st.session_state.q_source = src
+                            
+                            st.session_state.answer_submitted = False
+                            st.session_state.answered_q_id = None
+                            st.session_state.is_correct = None
+                            
+                            st.session_state.show_toast = True
+                            st.rerun()
+                        else:
+                            st.error("题目获取失败，请重试")
         else:
-            st.info("结构化数据库目前是空的。")
+            st.error("题目加载失败 😔")
+            st.info("""
+            **诊断信息：**
+            系统尝试为您（或者使用 AI）寻找或生成一道专属题目，但遇到了网络拥堵。
+            
+            **建议：**
+            1. 点击左侧侧边栏切换一下知识点。
+            2. 如果您是管理员，请检查终端后台是否有 API 报错日志。
+            """)
+            
+            if st.button("🔄 重新尝试生成"):
+                print("用户手动触发重新生成题目...")
+                load_new_question(force_ai=True)
+                st.rerun()
 
-        st.divider()
-        if st.button("🔙 返回首页", type="primary"):
-            st.session_state.page = "main"
-            st.rerun()
+if st.session_state.page == "db_manager":
+    st.header("📁 底层数据预览与统计")
+    st.markdown("---")
+
+    st.subheader("📚 RAG 向量知识库状态")
+    rag_stats = rag.get_knowledge_base_stats()
+
+    col1, col2 = st.columns(2)
+    col1.metric(label="已入库 PDF 文件数", value=f"{rag_stats['total_files']} 个")
+    col2.metric(label="向量化文本块 (Chunks)", value=f"{rag_stats['total_chunks']} 块")
+
+    if rag_stats['files']:
+        with st.expander("查看已入库的 PDF 文件列表"):
+            for file_name in rag_stats['files']:
+                st.write(f"- {file_name}")
+
+    st.markdown("---")
+
+    st.subheader("📝 结构化题库数据 (SQLite)")
+    all_qs = db.get_all_questions()
+    if all_qs:
+        # 顺便在这里加上结构化题库的总量统计
+        st.write(f"当前共有 **{len(all_qs)}** 道题目。")
+        df = pd.DataFrame(all_qs)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("结构化数据库目前是空的。")
+
+    st.divider()
+    if st.button("🔙 返回首页", type="primary"):
+        st.session_state.page = "main"
+        st.rerun()
 
 if st.session_state.get('show_toast', False):
     st.toast('✨ AI 题目生成成功！', icon='🎉')

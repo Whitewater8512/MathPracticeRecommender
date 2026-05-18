@@ -1,190 +1,124 @@
 import os
 import json
 import re
-import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
-from sklearn.metrics.pairwise import cosine_similarity
 
-# 加载环境变量
 load_dotenv()
 
-# ================= 配置区域 =================
-API_KEY = "sk-84911bac3a264cbdb80f2ae0e0c34e40"
-BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-MODEL_NAME = "qwen-math-plus" 
-# ===========================================
+# 本地 Qwen 部署
+LOCAL_CLIENT = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+LOCAL_MODEL = "/root/autodl-tmp/MPR/models/Qwen2.5-Math-7B-Instruct"
 
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=BASE_URL,
+# 云端 大模型
+CLOUD_CLIENT = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"), 
+    base_url="https://api.deepseek.com"
 )
+CLOUD_MODEL = "deepseek-v4-pro"
 
 def clean_latex_markdown(text: str) -> str:
-    """终极清洗函数：修复各种导致前端无法渲染的 LaTeX 格式问题"""
-    if not text:
-        return text
-        
+    if not text: return text
     text = text.replace('`', '')
-    
-    text = re.sub(r'\$\s+', '$', text) # 清理开头的空格
-    text = re.sub(r'\s+\$', '$', text) # 清理结尾的空格
-    
+    text = re.sub(r'\$\s+', '$', text)
+    text = re.sub(r'\s+\$', '$', text)
     text = text.replace('\\[', '$$').replace('\\]', '$$')
     text = text.replace('\\(', '$').replace('\\)', '$')
-            
     return text
 
-
-def generate_math_question(knowledge_point: str, difficulty: int = 2, question_type: str = "blank", rag_context: str = ""):
-    """调用 Qwen 生成一道结构化的数学题"""
-
+def generate_math_question(knowledge_point: str, difficulty: int = 2, question_type: str = "blank", rag_context: str = "", use_cloud: bool = True):
     system_prompt = """你是一个专业的高等数学出题专家。你的任务是根据用户提供的知识点生成一道高质量的数学题。
 请严格遵守以下规则：
-1. 【题干纯净】`content` 字段只能包含题目主体！**绝对禁止**在 `content` 中输出 A、B、C、D 选项及其内容。
-2. 【选项格式】如果是选择题，选项内容必须存放在 `options` 字段中，且选项里的**数学公式必须用 $ 包裹**（例如 "$ \\frac{1}{2} $"）。如果是填空题，`options` 输出空字符串。
-3. 【公式规范】数学公式请【必须且只能】使用 LaTeX 语法，用单个 $ 包裹内联公式，用 $$ 包裹块级公式。绝不能使用 Markdown 的反引号！
-4. 【强制打草稿】你必须先在 explanation 字段中写出详尽的推导过程。经过严密计算后，再将最终结果填入 answer 字段。
-5. 【强制输出JSON】必须严格按照给定的 JSON Schema 输出精简explanation】在核心公式和步骤即可，字数控制在 150 字以内。
+1. 【题干纯净】`content` 字段只能包含题目主体！**绝对禁止**在 `content` 中输出选项及其内容。
+2. 【选项格式】选择题选项必须存放在 `options` 字段。**严厉警告：选项里的任何数字、字母、分数或公式，都必须严格使用 $ 包裹！**（例如：必须输出 "$0$" 或 "$\\frac{1}{2}$"，绝对不能只写 "0" 或 "\\frac{1}{2}"）。填空题 `options` 输出空字符串。
+3. 【填空占位符】如果是填空题，题干中的待填空位置请严格使用 6 个纯文本下划线 `______` 表示（例如：“该极限的值为 ______”）。**绝对禁止**使用 `\\underline{\\hspace{...}}` 或 `\\fill` 等 LaTeX 占位指令！
+4. 【公式规范】数学公式必须使用标准 LaTeX。
+   - 在 JSON 字符串中，所有 LaTeX 反斜杠必须双写！例如：输出 "\\\\frac{1}{2}" 而不是 "\\frac{1}{2}"。
+   - 独立公式使用 $$ 包裹，行内公式使用 $ 包裹。
+   - 禁止转义下划线！直接输出 "_"，不要输出 "\\_"。
+5. 【PoT 推理】在 `explanation` 字段中必须包含严密的【思路】和【推导】过程，然后再将最终答案填入 `answer` 字段。
+6. 【强制输出JSON】必须严格按照给定的格式输出 JSON。
+
+---
+【One-Shot 示例】
+输入: 知识点: 函数极限, 难度: 2, 题型: choice
+输出:
+{
+  "content": "求极限 $\\\\lim_{x \\\\to 0} \\\\frac{\\\\sin 3x}{x}$ 的值（ ）",
+  "explanation": "【思路】本题考察等价无穷小替换。\\\\n【推导】当 $x \\\\to 0$ 时，$\\\\sin 3x \\\\sim 3x$。因此原式 = $\\\\lim_{x \\\\to 0} \\\\frac{3x}{x} = 3$。选项 C 正确。",
+  "answer": "C",
+  "options": {
+    "A": "0",
+    "B": "1",
+    "C": "3",
+    "D": "不存在"
+  }
+}
 """
 
     user_content = f"""
+【输入】
 知识点: {knowledge_point}
 难度: {difficulty} (1-5)
-题型: {'选择题' if question_type == 'choice' else '填空题(答案为纯数字。尽量保持整数，如必须是小数，说明小数点后的位数，不超过4位小数)'}
+题型: {'choice' if question_type == 'choice' else 'blank'}
+参考上下文: {rag_context}
 """
-
-    if rag_context:
-        user_content += f"\n以下是相关的参考资料，请参考其风格出题：\n{rag_context}\n"
-
-    user_content += "\n请以 JSON 格式输出题目。"
-
-    if question_type == "choice":
-        options_schema = {
-            "type": "object", 
-            "description": "选择题的四个选项，选项中的数学公式必须被 $ 包裹",
-            "properties": {
-                "A": {"type": "string"},
-                "B": {"type": "string"},
-                "C": {"type": "string"},
-                "D": {"type": "string"}
-            },
-            "required": ["A", "B", "C", "D"],
-            "additionalProperties": False
-        }
-    else:
-        options_schema = {
-            "type": "string",
-            "description": "这是填空题，此字段必须输出空字符串"
-        }
-
     json_schema = {
-        "name": "math_question_output",
+        "name": "math_question",
         "strict": True,
         "schema": {
             "type": "object",
             "properties": {
-                "content": {
-                    "type": "string", 
-                    "description": "题目的具体内容。绝对禁止在此字段中包含 A, B, C, D 选项文本！"
-                },
-                "explanation": {
-                    "type": "string", 
-                    "description": "详细的解题步骤和草稿过程"
-                },
-                "answer": {
-                    "type": "string", 
-                    "description": "最终正确答案。选择题填A/B/C/D，填空题填纯数字"
-                },
-                "options": options_schema
+                "content": {"type": "string"},
+                "explanation": {"type": "string", "description": "必须包含详细推导过程"},
+                "answer": {"type": "string"},
+                "options": {
+                    "type": "object",
+                    "properties": {
+                        "A": {"type": "string"}, "B": {"type": "string"},
+                        "C": {"type": "string"}, "D": {"type": "string"}
+                    }
+                }
             },
-            "required": ["content", "explanation", "answer", "options"],
-            "additionalProperties": False
+            "required": ["content", "explanation", "answer"]
         }
     }
 
     try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
+        # 动态路由：高难度题目 (diff >= 4) 或明确要求时，切换至云端大模型增强推理
+        # if use_cloud or difficulty >= 4:
+        #     completion = CLOUD_CLIENT.chat.completions.create(
+        #         model=CLOUD_MODEL,
+        #         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
+        #         response_format={"type": "json_object"}
+        #     )
+        # else:
+        #     completion = LOCAL_CLIENT.chat.completions.create(
+        #         model=LOCAL_MODEL,
+        #         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
+        #         extra_body={"guided_json": json_schema['schema']}
+        #     )
+        completion = CLOUD_CLIENT.chat.completions.create(
+            model=CLOUD_MODEL,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": system_prompt}, 
                 {"role": "user", "content": user_content}
             ],
-            # 使用 JSON Schema 彻底锁死输出结构
-            response_format={"type": "json_schema", "json_schema": json_schema}
+            response_format={"type": "json_object"}
         )
 
         raw_text = completion.choices[0].message.content
-        print(f"【Debug】模型原始输出: {raw_text}") 
-
         result_json = json.loads(raw_text)
 
-        # === 针对前端渲染的双重防御机制 ===
+        result_json['content'] = clean_latex_markdown(result_json.get('content', ''))
         
-        # 1. 暴力清理题干：万一模型发疯在题干加了选项，直接用正则截断
-        content_text = clean_latex_markdown(result_json.get('content', ''))
-        content_text = re.sub(r'(\\n|\n)+[A-E]\..*$', '', content_text, flags=re.DOTALL)
-        result_json['content'] = content_text
-
-        # 2. 格式化选项
         if question_type == "blank":
-            result_json['options'] = "" 
+            result_json['options'] = ""
         else:
             opts = result_json.get('options', {})
-            for key in ["A", "B", "C", "D"]:
-                if key in opts:
-                    opt_val = opts[key]
-                    # 如果选项里有反斜杠 \ (比如 \frac) 但没有被 $ 包裹，强行给它穿上衣服
-                    if '\\' in opt_val and '$' not in opt_val:
-                        opt_val = f"${opt_val}$"
-                    opts[key] = clean_latex_markdown(opt_val)
-            result_json['options'] = json.dumps(opts, ensure_ascii=False)
+            result_json['options'] = json.dumps({k: clean_latex_markdown(v) for k, v in opts.items()}, ensure_ascii=False)
 
         return result_json
-
     except Exception as e:
-        print(f"调用 Qwen API 出错: {e}")
+        print(f"LLM 生成失败: {e}")
         return None
-
-# def auto_tag_question(question_content: str) -> str:
-#     # 保持原有逻辑不变
-#     system_prompt = """你是一个考研数学（高等数学）专家。
-# 请根据用户提供的题目内容，将其归入最精确的细分知识点标签中。
-# 常见的标签包括：
-# 【函数极限，数列极限，连续、间断与导数，中值定理，导数应用，导数证明，积分，积分应用，重积分，多元微分概念，多元微分计算，微分方程，曲线积分，曲面积分，级数判敛，幂级数】
-# 如果题目涉及多个知识点，请输出最核心的【一个】。
-# **严格要求**：只输出标签名称，不要带任何标点符号、前缀或解释，例如："函数极限"、"数列极限"、"连续、间断与导数"等。
-# """
-#     try:
-#         completion = client.chat.completions.create(
-#             model=MODEL_NAME,
-#             messages=[
-#                 {"role": "system", "content": system_prompt},
-#                 {"role": "user", "content": f"请为这道题打标：\n{question_content}"}
-#             ]
-#         )
-#         tag = completion.choices[0].message.content.strip()
-#         return tag
-#     except Exception as e:
-#         print(f"打标失败: {e}")
-#         return "未分类"
-
-def auto_tag_question_with_kge(question_content: str, text_encoder, kge_embeddings_dict):
-    # 1. 获取题目的文本向量
-    q_vector = text_encoder.encode([question_content])[0]
-    
-    # 2. 可选：用一个简单的 MLP 将文本向量映射到 KGE 维度 (需要提前训练对齐)
-    # mapped_q_vector = align_model.predict(q_vector) 
-    mapped_q_vector = q_vector[:8] # 假设暴力截断到 MKR 的 args.dim=8 (仅作演示，实际需训练映射层)
-    
-    # 3. 计算与所有知识点的余弦相似度
-    best_kp = "未分类"
-    max_sim = -1
-    
-    for kp_name, kp_emb in kge_embeddings_dict.items():
-        sim = cosine_similarity([mapped_q_vector], [kp_emb])[0][0]
-        if sim > max_sim:
-            max_sim = sim
-            best_kp = kp_name
-            
-    return best_kp

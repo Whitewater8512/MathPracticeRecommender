@@ -1,0 +1,16 @@
+# 启动 vLLM API Server，占用本地 8000 端口
+python -m vllm.entrypoints.openai.api_server \
+  --model /root/autodl-tmp/MPR/models/Qwen2.5-Math-7B-Instruct \
+  --dtype bfloat16 \
+  --max-model-len 4096 \
+  --gpu-memory-utilization 0.7 \
+  --port 8000
+
+# 服务器运行streamlit到公网
+streamlit run app.py --server.port 6006 --server.address 0.0.0.0 --server.enableCORS false --server.enableXsrfProtection false
+
+# 开启学术加速
+source /etc/network_turbo
+
+# 关闭学术加速
+unset http_proxy && unset https_proxy
