@@ -1,1 +1,0 @@
-invalid type: string "$$\n\\begin{aligned}\n&= \\sum_{n=0}^{\\infty}(-1)^{n}\\left[\\frac{3}{2^{n+1}}-\\frac{2}{3^{n+1}}\\right](x-5)^{n} \\\\\n&= \\sum_{n=0}^{\\infty}(-1)^{n}\\frac{3^{n+2}-2^{n+2}}{6^{n+1}}(x-5)^{n}, \\\\\n&\\text{收敛区间应取}-1<\\frac{x-5}{2}<1\\text{与}-1<\\frac{x-5}{3}<1\\text{中的交集,即}3<x<7. \\\\\n&\\text{【1135】将函数}f(x)=\\frac{1}{x(x-1)}\\frac{e^{-x
