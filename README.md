@@ -123,8 +123,7 @@ streamlit run app.py --server.port 6006
 │   ├── raw_pdfs/                   # 原始 PDF (考研真题/习题册)
 │   ├── silver/                     # PDF 转换的 Markdown 中间产物
 │   └── gold/                       # 语义分块后的 Markdown
-├── chunk_debugs/                   # 分块调试元数据
-└── 吉米多维奇 高等数学习题精选精解.pdf  # 源教材
+└── chunk_debugs/                   # 分块调试元数据
 ```
 
 ## 知识点覆盖
