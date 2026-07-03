@@ -20,7 +20,7 @@ class SafeEmbeddingFunction:
     def __init__(self, device: str):
         from sentence_transformers import SentenceTransformer
         self._model = SentenceTransformer(
-            "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+            "./Alibaba-NLP/gte-Qwen2-1.5B-instruct",
             device=device,
             model_kwargs={"torch_dtype": torch.float16},
         )
@@ -48,6 +48,12 @@ class SafeEmbeddingFunction:
         if self._device == "cuda":
             torch.cuda.empty_cache()                   # 每次 encode 后立即释放碎片
         return embeddings.tolist()
+
+    def embed_query(self, input: List[str]):
+        return self.__call__(input)
+    
+    def embed_documents(self, input: List[str]):
+        return self.__call__(input)
 
 def get_embedding_function():
     return SafeEmbeddingFunction(device=DEVICE)

@@ -420,64 +420,29 @@ def save_answer(user_id, q_id, is_correct):
     conn.commit()
     conn.close()
 
-def calculate_proficiency(user_id, kp):
+def get_user_records(user_id):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("""
-        SELECT r.is_correct, q.question_type FROM records r
+        SELECT q.knowledge_point, r.is_correct
+        FROM records r 
+        JOIN questions q ON r.q_id = q.q_id
+        WHERE r.user_id = ?
+        ORDER BY r.timestamp ASC
+    """, conn, params=(user_id,))
+    conn.close()
+    return df.values.tolist()
+
+def get_raw_stats(user_id, kp):
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("""
+        SELECT is_correct FROM records r
         JOIN questions q ON r.q_id = q.q_id
         WHERE r.user_id = ? AND q.knowledge_point = ?
     """, conn, params=(user_id, kp))
     conn.close()
-
     tot = len(df)
-    if tot == 0:
-        return 0.0, 0, 25.0  # 对应P(L0)=0.4，25分
-
-    # ========== 1. 基础正确率计算 ==========
-    correct_count = df['is_correct'].sum()
-    raw_acc = df['is_correct'].mean() * 100
-
-    # ========== 2. BKT模型核心参数配置 ==========
-    P_L0 = 0.15    # 初始掌握概率
-    P_T = 0.02    # 学习转移概率
-    P_S = 0.15     # 失误概率
-    P_G_default = 0.25  # 默认猜测概率（4选1选择题）
-
-    # 初始化当前掌握概率
-    current_mastery = P_L0
-
-    for _, row in df.iterrows():
-        is_correct = row['is_correct']
-        q_type = row['question_type']
-        
-        # 适配题型的猜测概率：填空题几乎无法蒙对，猜测概率极低
-        P_G = 0.05 if q_type == 'blank' else P_G_default
-
-        # 步骤1：根据本次答题结果，计算观测后的后验掌握概率
-        if is_correct == 1:
-            # 答对的情况：贝叶斯公式更新
-            numerator = current_mastery * (1 - P_S)
-            denominator = numerator + (1 - current_mastery) * P_G
-            posterior_mastery = numerator / denominator if denominator != 0 else current_mastery
-        else:
-            # 答错的情况：贝叶斯公式更新
-            numerator = current_mastery * P_S
-            denominator = numerator + (1 - current_mastery) * (1 - P_G)
-            posterior_mastery = numerator / denominator if denominator != 0 else current_mastery
-
-        # 步骤2：更新下一次答题前的掌握概率（考虑学习效应）
-        next_mastery = posterior_mastery + (1 - posterior_mastery) * P_T
-        if next_mastery - current_mastery > 0.15:
-            current_mastery += 0.15
-        else:
-            current_mastery = next_mastery
-
-        # 步骤3：限制掌握概率在 [0, 1] 范围内
-        current_mastery = max(0, min(1, current_mastery))
-
-    # 计算最终推荐系数
-    final_rec_coef = current_mastery * 100
-    return round(raw_acc, 1), tot, round(final_rec_coef, 1)
+    if tot == 0: return 0.0, 0
+    return round(df['is_correct'].mean() * 100, 1), tot
 
 def get_history(user_id, kp):
     conn = sqlite3.connect(DB_FILE)
@@ -559,55 +524,3 @@ def insert_ai_question(content, kp, diff, q_type, options, answer, explanation="
     conn.commit()
     conn.close()
     return new_id
-
-def get_all_bkt_scores(user_id, kg_nodes):
-    conn = sqlite3.connect(DB_FILE)
-    # 一次性取出该用户的所有答题记录
-    df = pd.read_sql_query("""
-        SELECT q.knowledge_point, r.is_correct, q.question_type 
-        FROM records r 
-        JOIN questions q ON r.q_id = q.q_id
-        WHERE r.user_id = ?
-    """, conn, params=(user_id,))
-    conn.close()
-
-    # BKT 模型参数
-    P_L0 = 0.15; P_T = 0.02; P_S = 0.15; P_G_default = 0.25
-    bkt_scores = {}
-
-    # 按知识点分组计算
-    grouped = df.groupby('knowledge_point')
-    
-    for node in kg_nodes:
-        if node not in grouped.groups:
-            bkt_scores[node] = P_L0 * 100 # 没做过的默认 15分
-            continue
-            
-        node_df = grouped.get_group(node)
-        current_mastery = P_L0
-        
-        for _, row in node_df.iterrows():
-            is_correct = row['is_correct']
-            q_type = row['question_type']
-            P_G = 0.05 if q_type == 'blank' else P_G_default
-
-            if is_correct == 1:
-                numerator = current_mastery * (1 - P_S)
-                denominator = numerator + (1 - current_mastery) * P_G
-            else:
-                numerator = current_mastery * P_S
-                denominator = numerator + (1 - current_mastery) * (1 - P_G)
-                
-            posterior_mastery = numerator / denominator if denominator != 0 else current_mastery
-            next_mastery = posterior_mastery + (1 - posterior_mastery) * P_T
-            
-            if next_mastery - current_mastery > 0.15:
-                current_mastery += 0.15
-            else:
-                current_mastery = next_mastery
-                
-            current_mastery = max(0, min(1, current_mastery))
-            
-        bkt_scores[node] = current_mastery * 100
-        
-    return bkt_scores

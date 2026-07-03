@@ -205,3 +205,73 @@ class GraphRAG:
             collapsible=False
         )
         agraph(nodes=nodes, edges=edges, config=config)
+
+    def render_local_map(self, target_kp: str, user_bkt_scores: dict, max_nodes: int = 3):
+            """
+            当未触发降维时，展示当前知识点的局部微观拓扑图（前置 + 当前 + 后继）及掌握情况
+            :param max_nodes: 控制前置和后继节点最多展示的数量，防止图谱过载
+            """
+            if target_kp not in self.kg:
+                return
+
+            nodes, edges = [], []
+            added_nodes = set()
+
+            # 1. 定义一个闭包函数，用来根据 BKT 分数动态决定节点颜色和大小
+            def get_node_style(node_name):
+                score = user_bkt_scores.get(node_name, 15.0)  # 没做过的默认 15 分
+                if node_name == target_kp:
+                    return "#FF6B6B", 38, "diamond"  # 当前核心练习点：大菱形
+                elif score >= 70:
+                    return "#00CC96", 28, "circle"   # 已熟练掌握的节点：绿色
+                elif score >= 40:
+                    return "#FFAA00", 28, "circle"   # 正在提升中的节点：黄色
+                else:
+                    return "#FF4B4B", 28, "circle"   # 同样薄弱的前置/后继：红色
+
+            # 2. 添加当前目标节点
+            color, size, shape = get_node_style(target_kp)
+            t_bkt = round(user_bkt_scores.get(target_kp, 0.0), 1)
+            nodes.append(Node(id=target_kp, label=f"当前目标:\n{target_kp}\n(掌握:{t_bkt}%)", size=size, color=color, symbolType=shape))
+            added_nodes.add(target_kp)
+
+            # 3. 寻找并添加所有直接前置节点（先修条件）
+            predecessors = list(self.kg.predecessors(target_kp))[:max_nodes]
+            for pre in predecessors:
+                p_bkt = round(user_bkt_scores.get(pre, 0.0), 1)
+                if p_bkt > 0:
+                    if pre not in added_nodes:
+                        p_color, p_size, p_shape = get_node_style(pre)
+                        p_bkt = round(user_bkt_scores.get(pre, 0.0), 1)
+                        nodes.append(Node(id=pre, label=f"前置基础:\n{pre}\n(掌握:{p_bkt}%)", size=p_size, color=p_color, symbolType=p_shape))
+                        added_nodes.add(pre)
+                    edges.append(Edge(source=pre, target=target_kp, color="#E0E0E0", width=2, label="先修依赖"))
+
+            # 4. 寻找并添加所有直接后继节点（后续延伸）
+            successors = list(self.kg.successors(target_kp))[:max_nodes]
+            for succ in successors:
+                s_bkt = round(user_bkt_scores.get(succ, 0.0), 1)
+                if s_bkt > 0:
+                    if succ not in added_nodes:
+                        s_color, s_size, s_shape = get_node_style(succ)
+                        s_bkt = round(user_bkt_scores.get(succ, 0.0), 1)
+                        nodes.append(Node(id=succ, label=f"后续延伸:\n{succ}\n(掌握:{s_bkt}%)", size=s_size, color=s_color, symbolType=s_shape))
+                        added_nodes.add(succ)
+                    edges.append(Edge(source=target_kp, target=succ, color="#A9B0B0", width=1, dashed=True, label="后续解锁"))
+
+            # 5. 配置图谱并渲染
+            config = Config(
+                width="100%",        
+                height=400,
+                directed=True,
+                physics=True,
+                hierarchical={
+                    "enabled": True,
+                    "direction": "LR",
+                    "sortMethod": "directed"
+                },
+                nodeHighlightBehavior=True,
+                highlightColor="#F7A7A6",
+                collapsible=False
+            )
+            agraph(nodes=nodes, edges=edges, config=config)
